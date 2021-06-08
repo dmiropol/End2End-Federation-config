@@ -187,6 +187,9 @@ resource "nsxt_policy_tier0_gateway" "global_t0" {
   locale_service {
     edge_cluster_path = data.nsxt_policy_edge_cluster.london.path
   }
+  intersite_config {
+    primary_site_path = data.nsxt_policy_site.paris.path
+  }
   redistribution_config {
     enabled = true
     rule {
@@ -461,6 +464,7 @@ resource "nsxt_policy_security_policy" "intra_tier_web_web" {
   nsx_id       = "Intra-Tier Web-Web"
   category     = "Application"
   stateful     = true
+  sequence_number = "10"
   rule {
     display_name       = "Web to Web"
     source_groups      = [nsxt_policy_group.web_vm_group.path]
@@ -478,6 +482,7 @@ resource "nsxt_policy_security_policy" "inter_tier_web_app" {
   nsx_id       = "Inter-Tier Web-App"
   category     = "Application"
   stateful     = true
+  sequence_number = "20"
   rule {
     display_name       = "Any to Web"
     destination_groups = [nsxt_policy_group.web_vm_group.path]
@@ -503,6 +508,7 @@ resource "nsxt_policy_security_policy" "inter_tier_app_db" {
   nsx_id       = "Inter-Tier App-DB"
   category     = "Application"
   stateful     = true
+  sequence_number = "30"
   rule {
     display_name       = "App to DB"
     source_groups      = [nsxt_policy_group.app_vm_group.path]

@@ -32,7 +32,7 @@ terraform {
   required_providers {
     nsxt = {
       source = "vmware/nsxt"
-      version = "3.1.1"
+      version = "3.2.1"
     }
   }
 }
@@ -44,7 +44,7 @@ provider "nsxt" {
   global_manager       = "true"
   allow_unverified_ssl = true
 }
-/* 
+
 provider "nsxt" {
   alias                = "paris"
   host                 = "lm-paris"
@@ -59,7 +59,14 @@ provider "nsxt" {
   username             = "admin"
   password             = "VMware1!VMware1!"
   allow_unverified_ssl = true
-} */
+} 
+
+provider "vsphere" {
+  user           = "administrator@vsphere.local"
+  password       = "VMware1!"
+  vsphere_server = "vcsa-01a"
+  allow_unverified_ssl = true
+}
 
 # Sites definitions
 data "nsxt_policy_site" "paris" {
@@ -69,6 +76,11 @@ data "nsxt_policy_site" "paris" {
 data "nsxt_policy_site" "london" {
   display_name = "LM_London"
 }
+
+
+##############################
+# Infra configuration section
+##############################
 
 # Transport zones definitions
 data "nsxt_policy_transport_zone" "paris_overlay_tz" {
@@ -91,18 +103,7 @@ data "nsxt_policy_transport_zone" "london-uplinks-vlan-tz" {
   site_path    = data.nsxt_policy_site.london.path
 }
 
-# Edge cluster definitions
-data "nsxt_policy_edge_cluster" "paris" {
-  display_name = "EdgeCluster"
-  site_path    = data.nsxt_policy_site.paris.path
-}
-
-data "nsxt_policy_edge_cluster" "london" {
-  display_name = "EdgeCluster"
-  site_path    = data.nsxt_policy_site.london.path
-}
-
-# Edge nodes definitions
+# Edge nodes and cluster definitions
 data "nsxt_policy_edge_node" "edgenode-01a" {
     display_name        = "edgenode-01a"
     edge_cluster_path   = data.nsxt_policy_edge_cluster.paris.path
@@ -123,24 +124,14 @@ data "nsxt_policy_edge_node" "edgenode-02b" {
     edge_cluster_path   = data.nsxt_policy_edge_cluster.london.path
 }
 
-data "nsxt_policy_service" "service_icmp" {
-  display_name = "ICMP ALL"
+data "nsxt_policy_edge_cluster" "paris" {
+  display_name = "EdgeCluster"
+  site_path    = data.nsxt_policy_site.paris.path
 }
 
-data "nsxt_policy_service" "service_ssh" {
-  display_name = "SSH"
-}
-
-data "nsxt_policy_service" "service_https" {
-  display_name = "HTTPS"
-}
-
-data "nsxt_policy_service" "service_tcp-8443" {
-  display_name = "TCP-8443"
-}
-
-data "nsxt_policy_service" "service_mysql" {
-  display_name = "MySQL"
+data "nsxt_policy_edge_cluster" "london" {
+  display_name = "EdgeCluster"
+  site_path    = data.nsxt_policy_site.london.path
 }
 
 # VLAN segment definitions for T0 interface uplinks
@@ -172,13 +163,17 @@ resource "nsxt_policy_vlan_segment" "London_right-vlan-seg" {
   vlan_ids            = ["253"]
 }
 
+
+##############################
+# Routing configuration section
+##############################
+
 # T0 definitions
 resource "nsxt_policy_tier0_gateway" "global_t0" {
   display_name              = "T0-ParisLondon"
   nsx_id                    = "T0-ParisLondon"
   description               = "Global Tier-0 for Paris and London locations"
   failover_mode             = "PREEMPTIVE"
-  #ha_mode                   = "ACTIVE_ACTIVE"
   default_rule_logging      = false
   enable_firewall           = false
   locale_service {
@@ -190,12 +185,25 @@ resource "nsxt_policy_tier0_gateway" "global_t0" {
   intersite_config {
     primary_site_path = data.nsxt_policy_site.paris.path
   }
-  redistribution_config {
-    enabled = true
-    rule {
-      name  = "connected"
-      types = ["TIER0_STATIC", "TIER0_CONNECTED", "TIER1_CONNECTED"]
-    }
+}
+
+resource "nsxt_policy_gateway_redistribution_config" "t0_redistribute_paris" {
+  gateway_path = nsxt_policy_tier0_gateway.global_t0.path
+  site_path    = data.nsxt_policy_site.paris.path
+  bgp_enabled = true
+  rule {
+    name  = "TIER1_CONNECTED"
+    types = ["TIER1_CONNECTED"]
+  }
+}
+
+resource "nsxt_policy_gateway_redistribution_config" "t0_redistribute_london" {
+  gateway_path = nsxt_policy_tier0_gateway.global_t0.path
+  site_path    = data.nsxt_policy_site.london.path
+  bgp_enabled = true
+  rule {
+    name  = "TIER1_CONNECTED"
+    types = ["TIER1_CONNECTED"]
   }
 }
 
@@ -244,6 +252,7 @@ resource "nsxt_policy_tier0_gateway_interface" "London_right-intf" {
   subnets                = ["192.168.253.11/24"]
 }
 
+
 # BGP configuration
 resource "nsxt_policy_bgp_config" "Paris_global_bgp_t0" {
   site_path             = data.nsxt_policy_site.paris.path
@@ -263,7 +272,6 @@ resource "nsxt_policy_bgp_config" "London_global_bgp_t0" {
   graceful_restart_mode = "HELPER_ONLY"
 }
 
-#  BGP Neighbor 
 resource "nsxt_policy_bgp_neighbor" "Paris_bgp_left" {
   display_name          = "Paris_bgp_left"
   nsx_id                = "Paris_bgp_left"
@@ -342,6 +350,7 @@ resource "nsxt_policy_tier1_gateway" "paris_london_t1" {
   display_name = "T1DR-ParisLondon"
   nsx_id       = "T1DR-ParisLondon"
   tier0_path   = nsxt_policy_tier0_gateway.global_t0.path
+  route_advertisement_types = ["TIER1_CONNECTED"]
   locale_service {
     edge_cluster_path = data.nsxt_policy_edge_cluster.paris.path
   }
@@ -353,7 +362,12 @@ resource "nsxt_policy_tier1_gateway" "paris_london_t1" {
   }
 }
 
-# Global Segments definitions (web, app, db)
+
+##############################
+# Security configuration section
+##############################
+
+#  Segments definitions 
 resource "nsxt_policy_segment" "global_web_segment" {
   display_name      = "web-seg"
   nsx_id            = "web-seg"
@@ -364,24 +378,6 @@ resource "nsxt_policy_segment" "global_web_segment" {
   advanced_config {
     connectivity = "ON"
   }
-  tag {
-    tag = "terraform"
-  }
-}
-
-resource "nsxt_policy_segment" "global_app_segment" {
-  display_name      = "app-seg"
-  nsx_id            = "app-seg"
-  connectivity_path = nsxt_policy_tier1_gateway.paris_london_t1.path
-  subnet {
-    cidr = "172.16.20.1/24"
-  }
-  advanced_config {
-    connectivity = "ON"
-  }
-  tag {
-    tag = "terraform"
-  }
 }
 
 resource "nsxt_policy_segment" "global_db_segment" {
@@ -389,26 +385,14 @@ resource "nsxt_policy_segment" "global_db_segment" {
   nsx_id            = "db-seg"
   connectivity_path = nsxt_policy_tier1_gateway.paris_london_t1.path
   subnet {
-    cidr = "172.16.30.1/24"
+    cidr = "172.16.20.1/24"
   }
   advanced_config {
     connectivity = "ON"
   }
-  tag {
-    tag = "terraform"
-  }
 }
 
-# Service definitions for DFW
-data "nsxt_policy_service" "ssh" {
-  display_name = "SSH"
-}
-
-data "nsxt_policy_service" "icmp" {
-  display_name = "ICMP ALL"
-}
-
-# Security groups definitions for DFW
+# Security groups definitions
 resource "nsxt_policy_group" "web_vm_group" {
   display_name = "Web-VM-Group"
   nsx_id       = "Web-VM-Group"
@@ -419,25 +403,6 @@ resource "nsxt_policy_group" "web_vm_group" {
       key         = "Tag"
       value       = "Web"
     }
-  }
-  tag {
-    tag = "terraform"
-  }
-}
-
-resource "nsxt_policy_group" "app_vm_group" {
-  display_name = "App-VM-Group"
-  nsx_id       = "App-VM-Group"
-  criteria {
-    condition {
-      member_type = "VirtualMachine"
-      operator    = "EQUALS"
-      key         = "Tag"
-      value       = "App"
-    }
-  }
-  tag {
-    tag = "terraform"
   }
 }
 
@@ -452,37 +417,32 @@ resource "nsxt_policy_group" "db_vm_group" {
       value       = "DB"
     }
   }
-  tag {
-    tag = "terraform"
-  }
 }
 
+# services definitions
+data "nsxt_policy_service" "service_icmp" {
+  display_name = "ICMP ALL"
+}
 
-# DFW policy definitions
-resource "nsxt_policy_security_policy" "intra_tier_web_web" {
-  display_name = "Intra-Tier Web-Web"
-  nsx_id       = "Intra-Tier Web-Web"
+data "nsxt_policy_service" "service_ssh" {
+  display_name = "SSH"
+}
+
+data "nsxt_policy_service" "service_https" {
+  display_name = "HTTPS"
+}
+
+data "nsxt_policy_service" "service_mysql" {
+  display_name = "MySQL"
+}
+
+# DFW policy configuration
+resource "nsxt_policy_security_policy" "multi_tier_app" {
+  display_name = "2Tier-app"
+  nsx_id       = "2Tier-app"
   category     = "Application"
   stateful     = true
   sequence_number = "10"
-  rule {
-    display_name       = "Web to Web"
-    source_groups      = [nsxt_policy_group.web_vm_group.path]
-    destination_groups = [nsxt_policy_group.web_vm_group.path]
-    scope              = [nsxt_policy_group.web_vm_group.path]
-    action             = "ALLOW"
-  }
-  tag {
-    tag = "terraform"
-  }
-}
-
-resource "nsxt_policy_security_policy" "inter_tier_web_app" {
-  display_name = "Inter-Tier Web-App"
-  nsx_id       = "Inter-Tier Web-App"
-  category     = "Application"
-  stateful     = true
-  sequence_number = "20"
   rule {
     display_name       = "Any to Web"
     destination_groups = [nsxt_policy_group.web_vm_group.path]
@@ -491,33 +451,119 @@ resource "nsxt_policy_security_policy" "inter_tier_web_app" {
     action             = "ALLOW"
   }
   rule {
-    display_name       = "Web to App"
+    display_name       = "Web to DB"
     source_groups      = [nsxt_policy_group.web_vm_group.path]
-    destination_groups = [nsxt_policy_group.app_vm_group.path]
-    scope              = [nsxt_policy_group.web_vm_group.path,nsxt_policy_group.app_vm_group.path]
-    services           = [data.nsxt_policy_service.service_tcp-8443.path,data.nsxt_policy_service.service_ssh.path]
-    action             = "ALLOW"
-  }
-  tag {
-    tag = "terraform"
-  }
-}
-
-resource "nsxt_policy_security_policy" "inter_tier_app_db" {
-  display_name = "Inter-Tier App-DB"
-  nsx_id       = "Inter-Tier App-DB"
-  category     = "Application"
-  stateful     = true
-  sequence_number = "30"
-  rule {
-    display_name       = "App to DB"
-    source_groups      = [nsxt_policy_group.app_vm_group.path]
     destination_groups = [nsxt_policy_group.db_vm_group.path]
-    scope              = [nsxt_policy_group.app_vm_group.path,nsxt_policy_group.db_vm_group.path]
+    scope              = [nsxt_policy_group.web_vm_group.path,nsxt_policy_group.db_vm_group.path]
     services           = [data.nsxt_policy_service.service_mysql.path]
     action             = "ALLOW"
   }
+  rule {
+    display_name       = "Deny All"
+    destination_groups = [nsxt_policy_group.web_vm_group.path,nsxt_policy_group.db_vm_group.path]
+    scope              = [nsxt_policy_group.web_vm_group.path,nsxt_policy_group.db_vm_group.path]
+    action             = "REJECT"
+  }
+}
+
+
+##############################
+# working with vSphere VM objects for NSXT tagging
+##############################
+
+data "vsphere_datacenter" "DC-Paris" {
+  name = "DC-Paris"
+}
+
+data "vsphere_datacenter" "DC-London" {
+  name = "DC-London"
+}
+
+# Paris VMs
+data "vsphere_virtual_machine" "Web01_Paris" {
+  name         = "Web01"
+  datacenter_id = "${data.vsphere_datacenter.DC-Paris.id}"
+}
+data "nsxt_policy_vm" "nsx_web01_paris" {
+  display_name = "Web01"
+  depends_on = [data.vsphere_virtual_machine.Web01_Paris]
+}
+
+data "vsphere_virtual_machine" "Web02_Paris" {
+  name         = "Web02"
+  datacenter_id = "${data.vsphere_datacenter.DC-Paris.id}"
+}
+data "nsxt_policy_vm" "nsx_web02_paris" {
+  display_name = "Web02"
+  depends_on = [data.vsphere_virtual_machine.Web02_Paris]
+}
+
+data "vsphere_virtual_machine" "DB01_Paris" {
+  name         = "DB01"
+  datacenter_id = "${data.vsphere_datacenter.DC-Paris.id}"
+}
+data "nsxt_policy_vm" "nsx_db01_paris" {
+  display_name = "DB01"
+  depends_on = [data.vsphere_virtual_machine.DB01_Paris]
+}
+
+# London VMs
+data "vsphere_virtual_machine" "Web01_London" {
+  name         = "Web01"
+  datacenter_id = "${data.vsphere_datacenter.DC-London.id}"
+}
+data "nsxt_policy_vm" "nsx_web01_london" {
+  display_name = "Web01"
+  depends_on = [data.vsphere_virtual_machine.Web01_London]
+}
+
+data "vsphere_virtual_machine" "DB01_London" {
+  name         = "DB01"
+  datacenter_id = "${data.vsphere_datacenter.DC-London.id}"
+}
+data "nsxt_policy_vm" "nsx_db01_london" {
+  display_name = "DB01"
+  depends_on = [data.vsphere_virtual_machine.DB01_London]
+}
+
+# Apply NSX tags to VMs
+resource "nsxt_policy_vm_tags" "web01_vm_tags_paris" {
+  provider = "nsxt.paris"
+  instance_id  = data.nsxt_policy_vm.nxs_web01_paris.instance_id
   tag {
-    tag = "terraform"
+    tag   = "Web"
+  }
+}
+
+resource "nsxt_policy_vm_tags" "web02_vm_tags_paris" {
+  provider = "nsxt.paris"
+  instance_id  = data.nsxt_policy_vm.nxs_web02_paris.instance_id
+  tag {
+    tag   = "Web"
+  }
+}
+
+resource "nsxt_policy_vm_tags" "db01_vm_tags_paris" {
+  provider = "nsxt.paris"
+  instance_id  = data.nsxt_policy_vm.nxs_db01_paris.instance_id
+  tag {
+    tag   = "DB"
+  }
+}
+
+
+resource "nsxt_policy_vm_tags" "web01_vm_tags_london" {
+  provider = "nsxt.london"
+  instance_id  = data.nsxt_policy_vm.nxs_web01_london.instance_id
+  tag {
+    tag   = "Web"
+  }
+}
+
+resource "nsxt_policy_vm_tags" "db01_vm_tags_london" {
+  provider = "nsxt.london"
+  instance_id  = data.nsxt_policy_vm.nxs_db01_london.instance_id
+  tag {
+    tag   = "DB"
   }
 }

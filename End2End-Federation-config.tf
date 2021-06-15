@@ -82,11 +82,11 @@ provider "vsphere" {
 
 # Sites definitions
 data "nsxt_policy_site" "paris" {
-  display_name = "LM-Paris"
+  display_name = "LM_Paris"
 }
 
 data "nsxt_policy_site" "london" {
-  display_name = "LM-London"
+  display_name = "LM_London"
 }
 
 # Transport zones definitions
@@ -284,14 +284,14 @@ resource "nsxt_policy_bgp_neighbor" "Paris_bgp_left" {
   nsx_id                = "Paris_bgp_left"
   bgp_path              = nsxt_policy_bgp_config.Paris_global_bgp_t0.path
   graceful_restart_mode = "HELPER_ONLY"
-  hold_down_time        = 600
-  keep_alive_time       = 200
+  hold_down_time        = 4
+  keep_alive_time       = 1
   neighbor_address      = "192.168.240.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.Paris_left-intf.ip_addresses[0]]
   bfd_config {
     enabled  = true
-    interval = 1000
+    interval = 500
     multiple = 3
   }
 }
@@ -301,14 +301,14 @@ resource "nsxt_policy_bgp_neighbor" "Paris_bgp_right" {
   nsx_id                = "Paris_bgp_right"
   bgp_path              = nsxt_policy_bgp_config.Paris_global_bgp_t0.path
   graceful_restart_mode = "HELPER_ONLY"
-  hold_down_time        = 600
-  keep_alive_time       = 200
+  hold_down_time        = 4
+  keep_alive_time       = 1
   neighbor_address      = "192.168.250.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.Paris_right-intf.ip_addresses[0]]
   bfd_config {
     enabled  = true
-    interval = 1000
+    interval = 500
     multiple = 3
   }
 }
@@ -318,14 +318,14 @@ resource "nsxt_policy_bgp_neighbor" "London_bgp_left" {
   nsx_id                = "London_bgp_left"
   bgp_path              = nsxt_policy_bgp_config.London_global_bgp_t0.path
   graceful_restart_mode = "HELPER_ONLY"
-  hold_down_time        = 600
-  keep_alive_time       = 200
+  hold_down_time        = 4
+  keep_alive_time       = 1
   neighbor_address      = "192.168.243.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.London_left-intf.ip_addresses[0]]
   bfd_config {
     enabled  = true
-    interval = 1000
+    interval = 500
     multiple = 3
   }
 }
@@ -335,14 +335,14 @@ resource "nsxt_policy_bgp_neighbor" "London_bgp_right" {
   nsx_id                = "London_bgp_right"
   bgp_path              = nsxt_policy_bgp_config.London_global_bgp_t0.path
   graceful_restart_mode = "HELPER_ONLY"
-  hold_down_time        = 600
-  keep_alive_time       = 200
+  hold_down_time        = 4
+  keep_alive_time       = 1
   neighbor_address      = "192.168.253.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.London_right-intf.ip_addresses[0]]
   bfd_config {
     enabled  = true
-    interval = 1000
+    interval = 500
     multiple = 3
   }
 }
@@ -354,6 +354,7 @@ resource "nsxt_policy_tier1_gateway" "paris_london_t1" {
   nsx_id       = "T1DR-ParisLondon"
   tier0_path   = nsxt_policy_tier0_gateway.global_t0.path
   route_advertisement_types = ["TIER1_CONNECTED"]
+  /* only DR is being used
   locale_service {
     edge_cluster_path = data.nsxt_policy_edge_cluster.paris.path
   }
@@ -363,6 +364,7 @@ resource "nsxt_policy_tier1_gateway" "paris_london_t1" {
   intersite_config {
     primary_site_path = data.nsxt_policy_site.paris.path
   }
+  */
 }
 
 
@@ -444,8 +446,8 @@ resource "nsxt_policy_group" "db_vm_group" {
   }
 }
 
-resource "nsxt_policy_group" "mgmt-ip-ipset" {
-  display_name = "Mgmt-IP-ipset"
+resource "nsxt_policy_group" "mgmt-ip" {
+  display_name = "Mgmt-IP"
   criteria {
     ipaddress_expression {
       ip_addresses = ["192.168.110.10"]
@@ -477,7 +479,7 @@ resource "nsxt_policy_security_policy" "management-access" {
   category     = "Infrastructure"
   rule {
     display_name       = "Management SSH + ICMP"
-    source_groups      = [nsxt_policy_group.mgmt-ip-ipset.path]
+    source_groups      = [nsxt_policy_group.mgmt-ip.path]
     destination_groups = [nsxt_policy_group.db_vm_group.path, nsxt_policy_group.web_vm_group.path]
     services           = [data.nsxt_policy_service.service_ssh.path, data.nsxt_policy_service.service_icmp.path]
     scope              = [nsxt_policy_group.db_vm_group.path, nsxt_policy_group.web_vm_group.path]
@@ -565,6 +567,7 @@ resource "nsxt_policy_vm_tags" "db01_vm_tags_paris" {
   }
 }
 
+/*
 # London VMs
 data "vsphere_virtual_machine" "Web01_London" {
   name         = "Web01"
@@ -589,3 +592,5 @@ resource "nsxt_policy_vm_tags" "db01_vm_tags_london" {
     tag   = "DB"
   }
 }
+*/
+

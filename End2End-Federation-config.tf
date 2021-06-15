@@ -68,19 +68,26 @@ provider "vsphere" {
   allow_unverified_ssl = true
 }
 
-# Sites definitions
-data "nsxt_policy_site" "paris" {
-  display_name = "LM_Paris"
+provider "vsphere" {
+  alias          = "london"
+  user           = "administrator@vsphere.local"
+  password       = "VMware1!"
+  vsphere_server = "vcsa-01b"
+  allow_unverified_ssl = true
 }
-
-data "nsxt_policy_site" "london" {
-  display_name = "LM_London"
-}
-
 
 ##############################
 # Infra configuration section
 ##############################
+
+# Sites definitions
+data "nsxt_policy_site" "paris" {
+  display_name = "LM-Paris"
+}
+
+data "nsxt_policy_site" "london" {
+  display_name = "LM-London"
+}
 
 # Transport zones definitions
 data "nsxt_policy_transport_zone" "paris_overlay_tz" {
@@ -282,7 +289,6 @@ resource "nsxt_policy_bgp_neighbor" "Paris_bgp_left" {
   neighbor_address      = "192.168.240.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.Paris_left-intf.ip_addresses[0]]
-
   bfd_config {
     enabled  = true
     interval = 1000
@@ -300,7 +306,6 @@ resource "nsxt_policy_bgp_neighbor" "Paris_bgp_right" {
   neighbor_address      = "192.168.250.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.Paris_right-intf.ip_addresses[0]]
-
   bfd_config {
     enabled  = true
     interval = 1000
@@ -318,7 +323,6 @@ resource "nsxt_policy_bgp_neighbor" "London_bgp_left" {
   neighbor_address      = "192.168.243.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.London_left-intf.ip_addresses[0]]
-
   bfd_config {
     enabled  = true
     interval = 1000
@@ -336,7 +340,6 @@ resource "nsxt_policy_bgp_neighbor" "London_bgp_right" {
   neighbor_address      = "192.168.253.1"
   remote_as_num         = "200"
   source_addresses      = [nsxt_policy_tier0_gateway_interface.London_right-intf.ip_addresses[0]]
-
   bfd_config {
     enabled  = true
     interval = 1000
@@ -404,6 +407,17 @@ resource "nsxt_policy_group" "web_vm_group" {
       value       = "Web"
     }
   }
+  conjunction {
+    operator = "OR"
+  }
+  criteria {
+    condition {
+      member_type = "VirtualMachine"
+      operator    = "STARTSWITH"
+      key         = "Name"
+      value       = "Web"
+    }
+  }
 }
 
 resource "nsxt_policy_group" "db_vm_group" {
@@ -415,6 +429,26 @@ resource "nsxt_policy_group" "db_vm_group" {
       operator    = "EQUALS"
       key         = "Tag"
       value       = "DB"
+    }
+  }
+  conjunction {
+    operator = "OR"
+  }
+  criteria {
+    condition {
+      key         = "Name"
+      member_type = "VirtualMachine"
+      operator    = "STARTSWITH"
+      value       = "DB"
+    }
+  }
+}
+
+resource "nsxt_policy_group" "mgmt-ip-ipset" {
+  display_name = "Mgmt-IP-ipset"
+  criteria {
+    ipaddress_expression {
+      ip_addresses = ["192.168.110.10"]
     }
   }
 }
@@ -436,8 +470,22 @@ data "nsxt_policy_service" "service_mysql" {
   display_name = "MySQL"
 }
 
+
 # DFW policy configuration
-resource "nsxt_policy_security_policy" "multi_tier_app" {
+resource "nsxt_policy_security_policy" "management-access" {
+  display_name = "Management Access"
+  category     = "Infrastructure"
+  rule {
+    display_name       = "Management SSH + ICMP"
+    source_groups      = [nsxt_policy_group.mgmt-ip-ipset.path]
+    destination_groups = [nsxt_policy_group.db_vm_group.path, nsxt_policy_group.web_vm_group.path]
+    services           = [data.nsxt_policy_service.service_ssh.path, data.nsxt_policy_service.service_icmp.path]
+    scope              = [nsxt_policy_group.db_vm_group.path, nsxt_policy_group.web_vm_group.path]
+    action             = "ALLOW"
+  }
+}
+
+resource "nsxt_policy_security_policy" "two_tier_app" {
   display_name = "2Tier-app"
   nsx_id       = "2Tier-app"
   category     = "Application"
@@ -447,7 +495,7 @@ resource "nsxt_policy_security_policy" "multi_tier_app" {
     display_name       = "Any to Web"
     destination_groups = [nsxt_policy_group.web_vm_group.path]
     scope              = [nsxt_policy_group.web_vm_group.path]
-    services           = [data.nsxt_policy_service.service_icmp.path,data.nsxt_policy_service.service_ssh.path,data.nsxt_policy_service.service_https.path]
+    services           = [data.nsxt_policy_service.service_icmp.path,data.nsxt_policy_service.service_https.path]
     action             = "ALLOW"
   }
   rule {
@@ -467,9 +515,9 @@ resource "nsxt_policy_security_policy" "multi_tier_app" {
 }
 
 
-##############################
+############################################
 # working with vSphere VM objects for NSXT tagging
-##############################
+############################################
 
 data "vsphere_datacenter" "DC-Paris" {
   name = "DC-Paris"
@@ -477,34 +525,44 @@ data "vsphere_datacenter" "DC-Paris" {
 
 data "vsphere_datacenter" "DC-London" {
   name = "DC-London"
+  provider = vsphere.london
 }
 
 # Paris VMs
 data "vsphere_virtual_machine" "Web01_Paris" {
-  name         = "Web01"
+  name          = "Web01"
   datacenter_id = "${data.vsphere_datacenter.DC-Paris.id}"
 }
-data "nsxt_policy_vm" "nsx_web01_paris" {
-  display_name = "Web01"
-  depends_on = [data.vsphere_virtual_machine.Web01_Paris]
+resource "nsxt_policy_vm_tags" "web01_vm_tags_paris" {
+  provider = nsxt.paris
+  instance_id  = data.vsphere_virtual_machine.Web01_Paris.id
+  tag {
+    tag   = "Web"
+  }
 }
 
 data "vsphere_virtual_machine" "Web02_Paris" {
-  name         = "Web02"
+  name          = "Web02"
   datacenter_id = "${data.vsphere_datacenter.DC-Paris.id}"
 }
-data "nsxt_policy_vm" "nsx_web02_paris" {
-  display_name = "Web02"
-  depends_on = [data.vsphere_virtual_machine.Web02_Paris]
+resource "nsxt_policy_vm_tags" "web02_vm_tags_paris" {
+  provider = nsxt.paris
+  instance_id  = data.vsphere_virtual_machine.Web02_Paris.id
+  tag {
+    tag   = "Web"
+  }
 }
 
 data "vsphere_virtual_machine" "DB01_Paris" {
   name         = "DB01"
   datacenter_id = "${data.vsphere_datacenter.DC-Paris.id}"
 }
-data "nsxt_policy_vm" "nsx_db01_paris" {
-  display_name = "DB01"
-  depends_on = [data.vsphere_virtual_machine.DB01_Paris]
+resource "nsxt_policy_vm_tags" "db01_vm_tags_paris" {
+  provider = nsxt.paris
+  instance_id  = data.vsphere_virtual_machine.DB01_Paris.id
+  tag {
+    tag   = "DB"
+  }
 }
 
 # London VMs
@@ -512,57 +570,21 @@ data "vsphere_virtual_machine" "Web01_London" {
   name         = "Web01"
   datacenter_id = "${data.vsphere_datacenter.DC-London.id}"
 }
-data "nsxt_policy_vm" "nsx_web01_london" {
-  display_name = "Web01"
-  depends_on = [data.vsphere_virtual_machine.Web01_London]
+resource "nsxt_policy_vm_tags" "web01_vm_tags_london" {
+  provider = nsxt.london
+  instance_id  = data.vsphere_virtual_machine.Web01_London.id
+  tag {
+    tag   = "Web"
+  }
 }
 
 data "vsphere_virtual_machine" "DB01_London" {
   name         = "DB01"
   datacenter_id = "${data.vsphere_datacenter.DC-London.id}"
 }
-data "nsxt_policy_vm" "nsx_db01_london" {
-  display_name = "DB01"
-  depends_on = [data.vsphere_virtual_machine.DB01_London]
-}
-
-# Apply NSX tags to VMs
-resource "nsxt_policy_vm_tags" "web01_vm_tags_paris" {
-  provider = "nsxt.paris"
-  instance_id  = data.nsxt_policy_vm.nxs_web01_paris.instance_id
-  tag {
-    tag   = "Web"
-  }
-}
-
-resource "nsxt_policy_vm_tags" "web02_vm_tags_paris" {
-  provider = "nsxt.paris"
-  instance_id  = data.nsxt_policy_vm.nxs_web02_paris.instance_id
-  tag {
-    tag   = "Web"
-  }
-}
-
-resource "nsxt_policy_vm_tags" "db01_vm_tags_paris" {
-  provider = "nsxt.paris"
-  instance_id  = data.nsxt_policy_vm.nxs_db01_paris.instance_id
-  tag {
-    tag   = "DB"
-  }
-}
-
-
-resource "nsxt_policy_vm_tags" "web01_vm_tags_london" {
-  provider = "nsxt.london"
-  instance_id  = data.nsxt_policy_vm.nxs_web01_london.instance_id
-  tag {
-    tag   = "Web"
-  }
-}
-
 resource "nsxt_policy_vm_tags" "db01_vm_tags_london" {
-  provider = "nsxt.london"
-  instance_id  = data.nsxt_policy_vm.nxs_db01_london.instance_id
+  provider = nsxt.london
+  instance_id  = data.vsphere_virtual_machine.DB01_London.id
   tag {
     tag   = "DB"
   }

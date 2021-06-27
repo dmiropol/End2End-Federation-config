@@ -1,0 +1,156 @@
+{
+  "tier0s": [
+    {
+      "ha_mode": "ACTIVE_ACTIVE",
+      "failover_mode": "NON_PREEMPTIVE",
+      "default_rule_logging": false,
+      "disable_firewall": false,
+      "resource_type": "Tier0",
+      "id": "T0-Paris",
+      "display_name": "T0-Paris"
+    }
+  ],
+
+  "localeservices": [
+    {
+      "route_redistribution_config": {
+        "bgp_enabled": true,
+        "redistribution_rules": [
+          {
+            "name": "all",
+            "route_redistribution_types": [
+              "TIER0_STATIC", "TIER0_IPSEC_LOCAL_IP", "TIER0_EVPN_TEP_IP",
+              "TIER0_NAT", "TIER0_DNS_FORWARDER_IP", "TIER0_CONNECTED",
+              "TIER0_SERVICE_INTERFACE", "TIER0_LOOPBACK_INTERFACE",
+              "TIER0_ROUTER_LINK", "TIER0_EXTERNAL_INTERFACE",
+              "TIER0_SEGMENT", "TIER1_NAT", "TIER1_STATIC", "TIER1_LB_VIP",
+              "TIER1_LB_SNAT", "TIER1_DNS_FORWARDER_IP", "TIER1_CONNECTED",
+              "TIER1_SERVICE_INTERFACE", "TIER1_SEGMENT", "TIER1_IPSEC_LOCAL_ENDPOINT"
+            ]
+          }
+        ]
+      },
+      "edge_cluster_path": "",
+      "resource_type": "LocaleServices",
+      "id": "locale-service-1",
+      "display_name": "locale-service-1"
+    }
+  ],
+
+  "interfaces": [
+    {
+      "id": "Paris_left-seg1",
+      "display_name": "Paris_left-seg1",
+      "edge_path": "EDGE1_PATH",
+      "segment_path": "/infra/segments/Paris_left-seg",
+      "type": "EXTERNAL",
+      "multicast": {
+        "enabled": false
+      },
+      "resource_type": "Tier0Interface",
+      "subnets": [
+        {
+          "ip_addresses": [
+            "192.168.240.11"
+          ],
+          "prefix_len": 24
+        }
+      ]
+    },
+    {
+      "id": "Paris_left-seg2",
+      "display_name": "Paris_left-seg2",
+      "edge_path": "EDGE2_PATH",
+      "segment_path": "/infra/segments/Paris_left-seg",
+      "type": "EXTERNAL",
+      "multicast": {
+        "enabled": false
+      },
+      "resource_type": "Tier0Interface",
+      "subnets": [
+        {
+          "ip_addresses": [
+            "192.168.240.12"
+          ],
+          "prefix_len": 24
+        }
+      ]
+    },
+    {
+      "id": "Paris_right-seg1",
+      "display_name": "Paris_right-seg1",
+      "edge_path": "EDGE1_PATH",
+      "segment_path": "/infra/segments/Paris_right-seg",
+      "type": "EXTERNAL",
+      "multicast": {
+        "enabled": false
+      },
+      "resource_type": "Tier0Interface",
+      "subnets": [
+        {
+          "ip_addresses": [
+            "192.168.250.11"
+          ],
+          "prefix_len": 24
+        }
+      ]
+    },
+    {
+      "id": "Paris_right-seg2",
+      "display_name": "Paris_right-seg2",
+      "edge_path": "EDGE2_PATH",
+      "segment_path": "/infra/segments/Paris_right-seg",
+      "type": "EXTERNAL",
+      "multicast": {
+        "enabled": false
+      },
+      "resource_type": "Tier0Interface",
+      "subnets": [
+        {
+          "ip_addresses": [
+            "192.168.250.12"
+          ],
+          "prefix_len": 24
+        }
+      ]
+    }
+  ],
+
+  "bgpconfig": [
+    {
+      "local_as_num": "100",
+      "enabled": true,
+      "resource_type": "BgpRoutingConfig",
+      "id": "bgp",
+      "ecmp": "true",
+      "multipath_relax": "true",
+      "inter_sr_ibgp": "true",
+      "display_name": "bgp"
+    }
+  ],
+
+  "bgpneighbors": [
+    {
+      "source_addresses": [
+        "192.168.240.11",
+        "192.168.240.12"
+      ],
+      "neighbor_address": "192.168.240.1",
+      "remote_as_num": "200",
+      "resource_type": "BgpNeighborConfig",
+      "id": "t0-bgp-neighbor-240",
+      "display_name": "t0-bgp-neighbor-240"
+    },
+    {
+      "source_addresses": [
+        "192.168.250.11",
+        "192.168.250.12"
+      ],
+      "neighbor_address": "192.168.250.1",
+      "remote_as_num": "200",
+      "resource_type": "BgpNeighborConfig",
+      "id": "t0-bgp-neighbor-250",
+      "display_name": "t0-bgp-neighbor-250"
+    }
+  ]
+}

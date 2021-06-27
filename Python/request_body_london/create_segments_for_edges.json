@@ -1,0 +1,28 @@
+{
+	"segments": [
+    {
+      "display_name": "London_left-seg",
+      "id": "London_left-seg",
+      "transport_zone_path": "nsx-uplinks-vlan-transportzone",
+      "vlan_ids": [
+        "243"
+      ],
+      "advanced_config": {
+        "connectivity": "ON",
+        "uplink_teaming_policy_name": "teaming-1"
+      }
+    },
+    {
+      "display_name": "London_right-seg",
+      "id": "London_right-seg",
+      "transport_zone_path": "nsx-uplinks-vlan-transportzone",
+      "vlan_ids": [
+        "253"
+      ],
+      "advanced_config": {
+        "connectivity": "ON",
+        "uplink_teaming_policy_name": "teaming-2"
+      }
+    }
+	]
+}

@@ -1,0 +1,42 @@
+{
+  "ip_pools": [
+    {
+      "display_name": "TEP-pool"
+    },
+    {
+      "display_name": "RTEP-pool"
+    }
+  ],
+  "ip-subnets": [
+      {
+        "parent": "TEP-pool",
+        "subnets": {
+            "display_name": "TEP-pool-subnets",
+            "resource_type": "IpAddressPoolStaticSubnet",
+            "allocation_ranges": [
+                {
+                  "start": "192.168.143.101",
+                  "end": "192.168.143.200"
+                }
+            ],
+            "gateway_ip": "192.168.143.1",
+            "cidr": "192.168.143.0/24"
+        }
+      },
+      {
+        "parent": "RTEP-pool",
+        "subnets": {
+            "display_name": "RTEP-pool-subnets",
+            "resource_type": "IpAddressPoolStaticSubnet",
+            "allocation_ranges": [
+                {
+                  "start": "192.168.144.101",
+                  "end": "192.168.144.200"
+                }
+            ],
+            "gateway_ip": "192.168.144.1",
+            "cidr": "192.168.144.0/24"
+        }
+      }
+  ]
+}

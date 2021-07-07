@@ -259,8 +259,33 @@ resource "nsxt_policy_tier0_gateway_interface" "London_right-intf" {
   subnets                = ["192.168.253.11/24"]
 }
 
-
+###################
 # BGP configuration
+###################
+
+# route-map configuration for BGP path influence
+resource "nsxt_policy_gateway_prefix_list" "all" {
+  display_name           = "all"
+  gateway_path = nsxt_policy_tier0_gateway.global_t0.path
+  prefix {
+    action  = "PERMIT"
+    #network = "any"
+  }
+}
+
+resource "nsxt_policy_gateway_route_map" "AS_addition" {
+  display_name = "AS_addition"
+  gateway_path = nsxt_policy_tier0_gateway.global_t0.path
+  entry {
+    action              = "PERMIT"
+    prefix_list_matches = [nsxt_policy_gateway_prefix_list.all.path]
+    set {
+      as_path_prepend = "100"
+    }
+  }
+}
+
+# Global BGP configuration
 resource "nsxt_policy_bgp_config" "Paris_global_bgp_t0" {
   site_path             = data.nsxt_policy_site.paris.path
   gateway_path          = nsxt_policy_tier0_gateway.global_t0.path
@@ -279,6 +304,7 @@ resource "nsxt_policy_bgp_config" "London_global_bgp_t0" {
   graceful_restart_mode = "HELPER_ONLY"
 }
 
+# BGP peering configuration
 resource "nsxt_policy_bgp_neighbor" "Paris_bgp_left" {
   display_name          = "Paris_bgp_left"
   nsx_id                = "Paris_bgp_left"
@@ -328,6 +354,10 @@ resource "nsxt_policy_bgp_neighbor" "London_bgp_left" {
     interval = 500
     multiple = 3
   }
+  route_filtering {
+    address_family   = "IPV4"
+    out_route_filter = nsxt_policy_gateway_route_map.AS_addition.path
+  }
 }
 
 resource "nsxt_policy_bgp_neighbor" "London_bgp_right" {
@@ -344,6 +374,10 @@ resource "nsxt_policy_bgp_neighbor" "London_bgp_right" {
     enabled  = true
     interval = 500
     multiple = 3
+  }
+  route_filtering {
+    address_family   = "IPV4"
+    out_route_filter = nsxt_policy_gateway_route_map.AS_addition.path
   }
 }
 
